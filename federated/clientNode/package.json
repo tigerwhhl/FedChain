@@ -1,0 +1,32 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "anonymous anon",
+  "license": "ISC",
+  "dependencies": {
+    "archiver": "latest",
+    "body-parser": "^1.19.0",
+    "crypto": "latest",
+    "express": "^4.17.1",
+    "express-fileupload": "latest",
+    "fabric-ca-client": "^2.2.2",
+    "fabric-network": "^2.2.2",
+    "formidable": "^2.0.1",
+    "mongodb": "^3.6.2",
+    "mongoose": "latest",
+    "multer-gridfs-storage": "latest",
+    "gridfs-stream": "latest",
+    "multer": "latest",
+    "connect-busboy": "latest",
+    "path": "^0.12.7",
+    "pretty-print-json": "^1.2.3",
+    "python-shell": "^3.0.1",
+    "sha3": "^2.1.3"
+  }
+}
