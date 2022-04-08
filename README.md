@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# FedChain
-=======
 # FedChain
 Blockchain for Federated Machine Learning
 
@@ -26,7 +23,7 @@ The default application uses the HyperLedger Test network which bootstraps the f
 #### Network Setup:
 
 ```
-$  cd fabric-samples/Fedchain
+$  cd fabric-samples/federated
 $  ./end.sh
 $  ./start.sh
 ```
@@ -34,7 +31,7 @@ $  ./start.sh
 
 1. Change working directory:
 ```
-$  cd fabric-samples/FedChain/clientNode
+$  cd fabric-samples/federated/clientNode
 ```
 2. Install Application Dependancies:
 ```
@@ -46,4 +43,3 @@ $  node client.js
 ```
 
 4. To view the frontend, go to your browser and lauch http://localhost:8080
->>>>>>> c192db7 (first commit to FedChain)
