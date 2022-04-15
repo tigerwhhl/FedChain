@@ -1,0 +1,28 @@
+{
+
+	"model_name" : "vgg16",
+
+	"no_models" : 10,
+
+	"type" : "cifar",
+
+	"global_epochs" : 50,
+
+	"local_epochs" : 1,
+
+	"k" : 2,
+
+	"batch_size" : 32,
+
+	"lr" : 0.01,
+
+	"momentum" : 0.001,
+
+	"lambda" : 0.1,
+
+	"dp": true,
+
+	"dp_clip": 1.0,
+
+	"sigma" : 1e-6
+}
