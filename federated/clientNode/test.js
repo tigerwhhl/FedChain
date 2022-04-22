@@ -73,7 +73,7 @@ const upload = multer({ storage })
 
 app.post('/upload', upload.single('model'), async function(req, res){  
 
-    const ccpPath = path.resolve(__dirname,'..', '..','test-network', 'organizations', 'peerOrganizations', 'org3.example.com', 'connection-org3.json');
+    const ccpPath = path.resolve(__dirname,'..', '..','test-network', 'organizations', 'peerOrganizations', 'org1.example.com', 'connection-org1.json');
     let ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
     // Create a new file system based wallet for managing identities.
@@ -101,13 +101,13 @@ app.post('/upload', upload.single('model'), async function(req, res){
     //var org = await contract.evaluateTransaction("GetOrg");
     //org = org.match(/org[0-9]+/)[0];
     //console.log(org);
-    var org = "org3";
+    var org = "org1";
 
     gfs.files.findOne({"filename": req.file.originalname},async function(err, file){
        console.log(file._id.toString());
 
        try{
-            await contract.submitTransaction("UploadLocalModel", org, file._id.toString())
+            await contract.submitTransaction("UpdateLocalModel", org, file._id.toString())
        }catch(error){
             //collection.deleteOne({_id: insertData._id}, function(err){
             if(err) throw err;
@@ -242,6 +242,42 @@ app.get('/downloadLocals', async function(req, res){
       });
 });
 
+app.get('/test', async function(req, res){
+    const ccpPath = path.resolve(__dirname,'..', '..','test-network', 'organizations', 'peerOrganizations', 'org1.example.com', 'connection-org1.json');
+    let ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
+
+    // Create a new file system based wallet for managing identities.
+    const walletPath = path.join(process.cwd(), 'wallet');
+    const wallet = await Wallets.newFileSystemWallet(walletPath);
+    console.log(`Wallet path: ${walletPath}`);
+
+    // Check to see if we've already enrolled the user.
+    const identity = await wallet.get('client');
+    if (!identity) {
+        console.log('An identity for the user "client" does not exist in the wallet');
+        return;
+    }
+
+    // Create a new gateway for connecting to our peer node.
+    const gateway = new Gateway();
+    await gateway.connect(ccp, { wallet, identity: 'client', discovery: { enabled: true, asLocalhost: true } });
+
+    // Get the network (channel) our contract is deployed to.
+    const network = await gateway.getNetwork('mychannel');
+
+    // Get the contract from the network.
+    const contract = network.getContract('federated');
+
+    //var globalModel = await contract.evaluateTransaction("DownloadGlobalModelInfo");
+    //console.log(globalModel.toString());
+
+    var m = {};
+    m["org1"] = 0.1;
+    m["org2"] = 0.3;
+    m["org4"] = 0.15;
+    await contract.submitTransaction("FedAvg",JSON.stringify(m));
+    
+});
 
 app.get('/', async function(request, response) {
     response.sendFile(path.join(__dirname + '/public/upload.html'));
@@ -370,8 +406,8 @@ async function deleteGFS(){
 
 async function main(){
     try {
-        await enrollAdmin(3);
-        await registerClient(3);
+        await enrollAdmin(1);
+        await registerClient(1);
     } catch (error) {
         console.error(`Failed!`);
         process.exit(1);

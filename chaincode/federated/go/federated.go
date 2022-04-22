@@ -1,14 +1,10 @@
-/*
-SPDX-License-Identifier: Apache-2.0
-*/
-
 package main
 
 import (
 	"encoding/json"
 	"encoding/pem"
     "crypto/x509"
-	//"strconv"
+	"strconv"
 	"fmt"
     "bytes"
 	//"sync/atomic"
@@ -29,6 +25,7 @@ type SmartContract struct {
 
 type OrgInfo struct {
 	CurModelId string `json:"curModelId"`
+	CurWeight float32 `json:"curWeight"`
 	//Org string `json:"org"`
 	//Cert string `json:"cert"`
 	//Signature
@@ -37,7 +34,8 @@ type OrgInfo struct {
 type ModelBlock struct {
 	ModelType string `json:"modelType"`
 	PrevModelId string`json:"prevModelId"`
-
+	Weight float32 `json:"weight"`
+	Org string `json:"org"`
 	//WeightHash uint32 `json:"weightHash"`
 	//Timestamp int64 `json:"timestamp"`
 	//VerifyCode uint32 `json:verifyCode""`
@@ -49,6 +47,13 @@ type GlobalModel struct {
 	LocalModelIds []string `json:"localModelIds"`
 	UploadCount uint32 `json:"uploadCount"`
 	TriggerNum uint32 `json:"triggerNum"`
+}
+
+//-------------------------------------------
+
+type AggregateInfo struct {
+	GlobalModel *GlobalModel `json:"globalModel"`
+	ModelBlocks []ModelBlock `json:"modelBlocks"`
 }
 
 var session *mgo.Session
@@ -67,6 +72,12 @@ func (s *SmartContract) InitLedger(ctx contractapi.TransactionContextInterface) 
 
 	if err != nil {
 		return fmt.Errorf("Failed to put to world state. %s", err.Error())
+	}
+
+	for i := 1; i <= 10; i++ {
+		var orgInfo OrgInfo = OrgInfo{CurModelId:"-", CurWeight:1.0}
+		orgInfoByte, _ := json.Marshal(orgInfo)
+		err = ctx.GetStub().PutState("org"+strconv.Itoa(i), orgInfoByte)
 	}
 
 	se, _ := mgo.Dial("114.212.82.53:27017")
@@ -201,14 +212,33 @@ func (s *SmartContract) GetModelBlock(ctx contractapi.TransactionContextInterfac
 	return &modelBlock,err
 }
 
+func (s *SmartContract) DownloadGlobalModelInfo(ctx contractapi.TransactionContextInterface) (*AggregateInfo, error){
+	var info AggregateInfo
+	
+	globalModel, err := s.GetGlobalModel(ctx)
+	info.GlobalModel = globalModel
 
-func (s *SmartContract) UploadLocalModel(ctx contractapi.TransactionContextInterface, org string, curModelId string) error{
+	blocks := []ModelBlock{}
+	for i := 0; i < len(globalModel.LocalModelIds); i++ {
+		
+		modelBlock, _ := s.GetModelBlock(ctx, globalModel.LocalModelIds[i])
+		//fmt.Printf(modelBlock.ModelType)
+		blocks = append(blocks, *modelBlock)
+	}   
+	info.ModelBlocks = blocks
+
+    return &info, err
+}
+
+
+
+func (s *SmartContract) UpdateLocalModel(ctx contractapi.TransactionContextInterface, org string, curModelId string) error{
 	orgInfo, err := s.GetOrgInfo(ctx,org)
 	if err != nil {
 		return fmt.Errorf("%s",err.Error())
 	}
 
-	var modelBlock ModelBlock = ModelBlock{ModelType:"Local", PrevModelId:orgInfo.CurModelId}
+	var modelBlock ModelBlock = ModelBlock{ModelType:"Local", PrevModelId:orgInfo.CurModelId, Weight:orgInfo.CurWeight, Org:org}
 	orgInfo.CurModelId = curModelId
 
 	modelBlockBytes, _ := json.Marshal(modelBlock)
@@ -221,15 +251,10 @@ func (s *SmartContract) UploadLocalModel(ctx contractapi.TransactionContextInter
 		return fmt.Errorf("Failed to put to world state. %s", err.Error())
 	}
 
-	s.UpdateGlobalModel(ctx,curModelId)
-	return nil
-}
-
-func (s *SmartContract) UpdateGlobalModel(ctx contractapi.TransactionContextInterface, localModelId string) error{
-
+	//s.UpdateGlobalModel(ctx,curModelId)
 	globalModel, err :=s.GetGlobalModel(ctx);
 	globalModel.UploadCount +=1;
-	globalModel.LocalModelIds = append(globalModel.LocalModelIds, localModelId)
+	globalModel.LocalModelIds = append(globalModel.LocalModelIds, curModelId)
 
 	globalModelBytes, _ := json.Marshal(globalModel)
 	err = ctx.GetStub().PutState("global",globalModelBytes)
@@ -241,6 +266,38 @@ func (s *SmartContract) UpdateGlobalModel(ctx contractapi.TransactionContextInte
 	if globalModel.UploadCount == globalModel.TriggerNum {
 		fmt.Printf("Begin Global Model Federated Aggregation")
 	}
+	return nil
+}
+
+func (s *SmartContract) FedAvg(ctx contractapi.TransactionContextInterface, weights string) error{
+	//something to do
+
+	weightsMap := make(map[string]float32)
+	err := json.Unmarshal([]byte(weights), &weightsMap)
+	
+	for k,v := range weightsMap{
+		orgInfo, _ := s.GetOrgInfo(ctx,k)
+		orgInfo.CurWeight = v
+		orgInfoBytes, _ := json.Marshal(orgInfo)
+		err = ctx.GetStub().PutState(k,orgInfoBytes)
+	}
+	// orgInfoBytes, _ := json.Marshal(orgInfo)
+	// err = ctx.GetStub().PutState("org1",orgInfoBytes)
+	return err
+	// globalModel, err :=s.GetGlobalModel(ctx);
+	// globalModel.UploadCount +=1;
+	// globalModel.LocalModelIds = append(globalModel.LocalModelIds, localModelId)
+
+	// globalModelBytes, _ := json.Marshal(globalModel)
+	// err = ctx.GetStub().PutState("global",globalModelBytes)
+
+	// if err != nil {
+	// 	return fmt.Errorf("%s",err.Error())
+    // }
+ 
+	// if globalModel.UploadCount == globalModel.TriggerNum {
+	// 	fmt.Printf("Begin Global Model Federated Aggregation")
+	// }
 	return nil
 }
 
