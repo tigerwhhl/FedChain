@@ -2,11 +2,14 @@ import argparse, json
 import datetime
 import os
 import logging
+
+import numpy as np
 import torch, random
 
 from server import *
 from client import *
-import models, datasets
+import datasets
+import models
 import plot
 
 if __name__ == '__main__':
@@ -22,14 +25,31 @@ if __name__ == '__main__':
     with open(args.conf, 'r') as f:
         conf = json.load(f)
 
-    train_datasets, eval_datasets = datasets.get_dataset("./data/", conf["type"])
+    dataset = datasets.GetDataSet(dataset_name=conf["dataset"], is_iid=conf["iid"])
+    server = Server(conf,dataset.test_dataset)
 
-    server = Server(conf, eval_datasets)
     clients = []
+    print("Create {} clients".format(conf["client_num"]))
 
-    print("Create {} clients".format(conf["no_models"]))
-    for c in range(conf["no_models"]):
-        clients.append(Client(conf, server.global_model, train_datasets, c))
+    shard_size = dataset.train_data_size // conf["client_num"] // 2
+    shard_id = np.random.permutation(dataset.train_data_size // shard_size)
+    train_data = dataset.train_dataset.data
+    train_label = dataset.train_dataset.targets
+
+    for i in range(conf["client_num"]):
+        #clients.append(Client(conf, server.global_model, train_datasets, c))
+        #clients.append(Client(conf, server.global_model, cifar_dataset.train_dataset, i))
+
+        shard_id1 = shard_id[i * 2]
+        shard_id2 = shard_id[i * 2 + 1]
+
+        shards1 = list(range(shard_id1 * shard_size, shard_id1 * shard_size + shard_size))
+        shards2 = list(range(shard_id2 * shard_size, shard_id2 * shard_size + shard_size))
+
+        subset = torch.utils.data.Subset(dataset.train_dataset, shards1+shards2)
+        clients.append(Client(conf=conf,
+                        train_dataset=subset, id=i))
+
 
     print("Start Training...")
     epochs = []

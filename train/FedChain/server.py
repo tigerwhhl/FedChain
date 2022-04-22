@@ -7,9 +7,14 @@ class Server(object):
 
         self.conf = conf
 
-        self.global_model = models.get_model(self.conf["model_name"], load_from_local=True)
-
         self.eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=self.conf["batch_size"], shuffle=True)
+
+        model = models.get_model(conf["model_name"], load_from_local=True)
+        # model = models.CNNMnist()
+        if torch.cuda.is_available():
+            model = model.cuda()
+
+        self.global_model = model
 
     def model_aggregate(self, weight_accumulator):
         for name, data in self.global_model.state_dict().items():

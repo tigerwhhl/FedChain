@@ -3,6 +3,26 @@ import math
 import os
 import glob
 from torchvision import models
+from torch import nn
+import torch.nn.functional as F
+
+class CNNMnist(nn.Module):
+    def __init__(self):
+        super(CNNMnist, self).__init__()
+        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
+        self.conv2_drop = nn.Dropout2d()
+        self.fc1 = nn.Linear(320, 50)
+        self.fc2 = nn.Linear(50, 10)
+
+    def forward(self, x):
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, training=self.training)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
 
 def get_model(name="vgg16",  model_dir="./models/checkpoints/", pretrained=True, load_from_local=False):
 
@@ -32,16 +52,11 @@ def get_model(name="vgg16",  model_dir="./models/checkpoints/", pretrained=True,
         elif name == "googlenet":
             model = models.googlenet(pretrained=pretrained)
 
-    if torch.cuda.is_available():
-        return model.cuda()
-    else:
-        return model
-
-def model_norm(model_1, model_2):
-    squared_sum = 0
-    for name, layer in model_1.named_parameters():
-        squared_sum += torch.sum(torch.pow(layer.data - model_2.state_dict()[name].data, 2))
-    return math.sqrt(squared_sum)
+    return model
+    # if torch.cuda.is_available():
+    #     return model.cuda()
+    # else:
+    #     return model
 
 
 if __name__ == '__main__':
