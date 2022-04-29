@@ -1,3 +1,5 @@
+import collections
+
 import models, torch
 
 
@@ -7,16 +9,17 @@ class Server(object):
 
         self.conf = conf
 
-        self.eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=self.conf["batch_size"], shuffle=True)
+        self.eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=self.conf["batch_size"], shuffle=True, num_workers=4)
 
-        model = models.get_model(conf["model_name"], load_from_local=True)
+        #model = models.get_model(conf["model_name"], load_from_local=True)
         # model = models.CNNMnist()
+        model = models.VGGCifar()
         if torch.cuda.is_available():
             model = model.cuda()
 
         self.global_model = model
 
-    def model_aggregate(self, weight_accumulator):
+    def model_update_aggregate(self, weight_accumulator):
         for name, data in self.global_model.state_dict().items():
             #update_per_layer = weight_accumulator[name] * self.conf["lambda"]
             update_per_layer = weight_accumulator[name]
@@ -34,6 +37,18 @@ class Server(object):
                 data.add_(update_per_layer.to(torch.int64))
             else:
                 data.add_(update_per_layer)
+
+    def model_weight_aggregate(self, models):
+         fed_state_dict = collections.OrderedDict()
+
+         for key, param in self.global_model.state_dict().items():
+            sum = torch.zeros_like(param)
+            for model in models:
+                 sum.add_(model.state_dict()[key])
+            sum = torch.div(sum, len(models))
+            fed_state_dict[key] = sum
+
+         self.global_model.load_state_dict(fed_state_dict)
 
     def model_eval(self):
         self.global_model.eval()

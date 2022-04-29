@@ -1,16 +1,19 @@
 {
+	"save_name" : "result_iid_exchange",
 
 	"model_name" : "vgg16",
 
-	"no_models" : 10,
+	"client_num" : 10,
 
-	"type" : "cifar",
+	"dataset" : "cifar",
 
-	"global_epochs" : 50,
+	"iid": true,
+
+	"global_epochs" : 250,
 
 	"local_epochs" : 1,
 
-	"k" : 2,
+	"k" : 3,
 
 	"batch_size" : 32,
 
@@ -24,5 +27,17 @@
 
 	"dp_clip": 1.0,
 
-	"sigma" : 1e-6
+	"sigma" : 1e-6,
+
+	"exchange": true ,
+
+	"exchange_epochs": 10,
+
+	"exchange_probability": 0.2,
+
+	"exchange_local_epochs": 2,
+
+	"exchange_min_num": 1,
+
+	"exchange_max_num": 1
 }

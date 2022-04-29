@@ -24,10 +24,33 @@ class CNNMnist(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
+class VGGCifar(nn.Module):
+    def __init__(self, num_classes=10, model_name="vgg16"):
+        super(VGGCifar, self).__init__()
+        net = get_model(model_name, load_from_local=True)
+        net.classifier = nn.Sequential()
+
+        self.features = net
+        self.classifier = nn.Sequential(
+            nn.Linear(512 * 7 * 7, 512),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(512, 128),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(128, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
 def get_model(name="vgg16",  model_dir="./models/checkpoints/", pretrained=True, load_from_local=False):
 
     if load_from_local:
-        print("Load model from local dir {}".format(model_dir))
+        #print("Load model from local dir {}".format(model_dir))
         model = eval('models.%s(pretrained=False)' % name)
         path_format = os.path.join(model_dir, '%s-[a-z0-9]*.pth' % name)
         model_path = glob.glob(path_format)[0]

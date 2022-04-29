@@ -24,6 +24,7 @@ if __name__ == '__main__':
 
     with open(args.conf, 'r') as f:
         conf = json.load(f)
+    print(conf)
 
     dataset = datasets.GetDataSet(dataset_name=conf["dataset"], is_iid=conf["iid"])
     server = Server(conf,dataset.test_dataset)
@@ -48,16 +49,17 @@ if __name__ == '__main__':
 
         subset = torch.utils.data.Subset(dataset.train_dataset, shards1+shards2)
         clients.append(Client(conf=conf,
-                        train_dataset=subset, id=i))
-
+                        train_dataset=subset, test_dataset=dataset.test_dataset, id=i))
 
     print("Start Training...")
+    client_indices=list(range(conf["client_num"]))
     epochs = []
     accuracy = []
     validloss = []
     for e in range(conf["global_epochs"]):
 
-        candidates = random.sample(clients, conf["k"])
+        k = random.randint(3,conf["k"])
+        candidates = random.sample(clients, k)
 
         weights = {}
         for c in candidates:
@@ -69,14 +71,59 @@ if __name__ == '__main__':
             weight_accumulator[name] = torch.zeros_like(params)
 
 
-        for c in candidates:
-            diff = c.local_train(server.global_model)
-            print("client {} finish local train".format(c.client_id))
+        if conf["exchange"]:
+            p = random.random()
+            if p <= conf["exchange_probability"]:
+                print("Epoch {}: Start Exchanging the models by blockchain".format(e))
 
-            for name, params in server.global_model.state_dict().items():
-                weight_accumulator[name].add_(diff[name] * weights[c])
+                dir = "./models/clients/client"
+                exchange_indices = [random.sample(client_indices, random.randint(conf["exchange_min_num"], conf["exchange_max_num"])) for _ in candidates]
+                print("exchange map: {}".format(exchange_indices))
 
-        server.model_aggregate(weight_accumulator)
+                # for i in range(conf["client_num"]):
+                #     clients[i].save_model()
+
+                for i in range(len(candidates)):
+                    print("The client {} load the model from clients {}".format(candidates[i].client_id , exchange_indices[i]))
+                    acc, _ = candidates[i].eval_model()
+                    print("Before : client {} valid acc {}".format(candidates[i].client_id, acc))
+
+                    candidates[i].save_model()
+                    path = os.path.join("./models/clients/", 'client' + str(candidates[i].client_id), 'model.pth')
+
+                    #candidates[i].fuse_model_by_avg([clients[id].local_model for id in exchange_indices[i]])
+
+                    for id in exchange_indices[i]:
+                        clients[id].fuse_model_by_distillation(candidates[i].local_model, candidates[i].client_id)
+                        candidates[i].load_model(path)
+
+
+                    acc, _ = candidates[i].eval_model()
+                    print("After : client {} valid acc {}".format(candidates[i].client_id, acc))
+
+                server.model_weight_aggregate([c.local_model for c in candidates])
+
+            else:
+                for c in candidates:
+                    diff = c.local_train(server.global_model)
+                    print("client {} finish local train".format(c.client_id))
+
+                    for name, params in server.global_model.state_dict().items():
+                        weight_accumulator[name].add_(diff[name] * weights[c])
+
+                #server.model_update_aggregate(weight_accumulator)
+                server.model_weight_aggregate([c.local_model for c in candidates])
+
+        else:
+            for c in candidates:
+                diff = c.local_train(server.global_model)
+                print("client {} finish local train".format(c.client_id))
+
+                for name, params in server.global_model.state_dict().items():
+                    weight_accumulator[name].add_(diff[name] * weights[c])
+
+            #server.model_update_aggregate(weight_accumulator)
+            server.model_weight_aggregate([c.local_model for c in candidates])
 
         acc, loss = server.model_eval()
 
@@ -86,4 +133,6 @@ if __name__ == '__main__':
         validloss.append(loss)
         accuracy.append(acc)
 
-    plot.plot(epochs, validloss, accuracy)
+        if e%10 ==0 and e>0:
+            plot.plot(epochs, accuracy, label1="accuracy", name=conf["save_name"])
+            plot.save_array(epochs, accuracy, validloss, name=conf["save_name"])
