@@ -25,6 +25,8 @@ def compare(x,y1,label1, y2, label2, dir="./results/", name="result"):
     plt.sca(ax)
     plt.plot(x, y1, "r", label=label1)
     plt.plot(x, y2, "b", label=label2)
+    plt.xlabel("Rounds")
+    plt.ylabel("Accuracy")
     plt.legend()
 
     path = os.path.join(dir, name+".png")
@@ -44,7 +46,23 @@ if __name__ == '__main__':
     #plot(epochs,acc, "acc", name="1")
 
     #save_array(epochs, acc, loss, name="1")
-    a = np.load("./results/result_iid_exchange.npy")
-    b = np.load("./results/result_iid_base.npy")
 
-    compare(a[0][:191], a[1][:191], "exchange_acc", b[1][:191], "base_acc")
+    # a = np.load("results/cifar100_result_iid_exchange/cifar100_result_iid_exchange.npy")
+    # b = np.load("results/cifar100_result_iid_base/cifar100_result_iid_base.npy")
+
+    a = np.load("results/cifar100_result_niid0.5_exchange/cifar100_result_niid0.5_exchange.npy")
+    b = np.load("results/cifar100_result_niid0.5_base/cifar100_result_niid0.5_base.npy")
+
+    # a = np.load("results/cifar10_result_iid1.0_exchange/cifar10_result_iid1.0_exchange.npy")
+    # b = np.load("results/cifar10_result_iid1.0_base/cifar10_result_niid1.0_base.npy")
+
+    # a = np.load("results/cifar10_result_niid0.1_exchange/cifar10_result_niid0.1_exchange.npy")
+    # b = np.load("results/cifar10_result_niid0.1_base/cifar10_result_niid0.1_base.npy")
+
+    #a = np.load("results/fashion_mnist_result_niid0.1_exchange/fashion_mnist_result_niid0.1_exchange.npy")
+    #b = np.load("results/fashion_mnist_result_niid0.1_base/fashion_mnist_result_niid0.1_base.npy")
+
+    # a = np.load("results/fashion_mnist_result_iid_exchange/fashion_mnist_result_iid_exchange.npy")
+    # b = np.load("results/fashion_mnist_result_iid_base/fashion_mnist_result_iid_base.npy")
+
+    compare(a[0], a[1], "fedchain_acc", b[1], "baseline_acc")

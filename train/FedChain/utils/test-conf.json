@@ -1,13 +1,15 @@
 {
+	"save_name" : "mnist_result_iid_exchange",
+
 	"model_name" : "vgg16",
 
-	"client_num" : 3,
+	"client_num" : 10,
 
 	"dataset" : "cifar10",
 
 	"iid": false,
 
-	"niid_beta": 0.5,
+	"niid_beta": 0.3,
 
 	"global_epochs" : 250,
 
@@ -15,11 +17,13 @@
 
 	"k" : 3,
 
-	"batch_size" : 32,
+	"batch_size" : 64,
 
 	"lr" : 0.01,
 
-	"momentum" : 0.9,
+	"momentum" : 0.001,
+
+	"lambda" : 0.1,
 
 	"dp": true,
 
@@ -27,7 +31,7 @@
 
 	"sigma" : 1e-6,
 
-	"exchange": true,
+	"exchange": false ,
 
 	"exchange_probability": 0.2,
 
@@ -35,9 +39,5 @@
 
 	"exchange_min_num": 1,
 
-	"exchange_max_num": 1,
-
-	"model_store_in_file": false,
-
-	"communication_with_blockchain": false
+	"exchange_max_num": 1
 }

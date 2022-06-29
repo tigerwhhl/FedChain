@@ -1,11 +1,15 @@
 import collections
-
+import os
 import models, torch
-
+import requests
+import schedule
+import time
+import json
+from concurrent.futures import ThreadPoolExecutor
 
 class Server(object):
 
-    def __init__(self, conf, eval_dataset):
+    def __init__(self, conf, eval_dataset, device=None):
 
         self.conf = conf
 
@@ -13,11 +17,31 @@ class Server(object):
 
         #model = models.get_model(conf["model_name"], load_from_local=True)
         # model = models.CNNMnist()
-        model = models.VGGCifar()
-        if torch.cuda.is_available():
-            model = model.cuda()
+        if self.conf["dataset"] == "cifar10":
+            model = models.VGGCifar(num_classes=10)
 
-        self.global_model = model
+        if self.conf["dataset"] == "cifar100":
+            model = models.VGGCifar(num_classes=100)
+
+        if self.conf["dataset"] == "mnist" or self.conf["dataset"] == "fashion_mnist":
+            model = models.VGGMNIST()
+
+        self.device = device
+        self.global_model = model.to(self.device)
+        #self.global_model = model
+
+        if self.conf["model_store_in_file"]:
+            self.save_model()
+
+        if self.conf["communication_with_blockchain"]:
+            self.session = requests.Session()
+            self.org_server = "http://114.212.82.242:8080/"
+            self.update_global_api = "updateGlobal"
+
+            self.executor = ThreadPoolExecutor(max_workers=1)
+            self.executor.submit(self.monitor_blockchain, 5)
+            self.fedavg_ready = False
+
 
     def model_update_aggregate(self, weight_accumulator):
         for name, data in self.global_model.state_dict().items():
@@ -39,16 +63,35 @@ class Server(object):
                 data.add_(update_per_layer)
 
     def model_weight_aggregate(self, models):
+         if self.conf["communication_with_blockchain"]:
+            while not self.fedavg_ready:
+                continue
+            self.fedavg_ready = False
+            print("Having enough local updates")
+
          fed_state_dict = collections.OrderedDict()
 
          for key, param in self.global_model.state_dict().items():
             sum = torch.zeros_like(param)
             for model in models:
-                 sum.add_(model.state_dict()[key])
+                 sum.add_(model.state_dict()[key].clone().to(self.device))
             sum = torch.div(sum, len(models))
             fed_state_dict[key] = sum
 
          self.global_model.load_state_dict(fed_state_dict)
+
+         if self.conf["model_store_in_file"]:
+             self.save_model()
+
+         if self.conf["communication_with_blockchain"]:
+            data = {
+                "cur_hash_id": str(hash(frozenset(self.global_model.state_dict().values()))),
+                "cur_model_url": "./models/server/model.pth",
+                "timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(round(time.time() * 1000)) / 1000))
+            }
+            response = self.session.post(self.org_server + self.update_global_api, data=json.dumps(data), headers={'content-type': 'application/json'})
+            print(response.content)
+
 
     def model_eval(self):
         self.global_model.eval()
@@ -60,9 +103,8 @@ class Server(object):
             data, target = batch
             dataset_size += data.size()[0]
 
-            if torch.cuda.is_available():
-                data = data.cuda()
-                target = target.cuda()
+            data = data.to(self.device)
+            target = target.to(self.device, dtype=torch.long)
 
             output = self.global_model(data)
 
@@ -75,3 +117,26 @@ class Server(object):
         total_l = total_loss / dataset_size
 
         return acc, total_l
+
+    def save_model(self, dir='./models/server/', client_id=-1):
+        path = os.path.join(dir, 'model.pth')
+        print("Save global model to {}".format(path))
+        torch.save(self.global_model.state_dict(), path)
+
+    def monitor_blockchain(self,interval):
+        monitor_api = "test"
+
+        def monitor_block():
+            res = self.session.get(self.org_server + monitor_api).content
+            block = json.loads(res) #dict
+            #print(block)
+
+            if block["uploadCount"] >= block["triggerAvgNum"]:
+                self.fedavg_ready = True
+
+
+        #schedule.clear()
+        schedule.every(interval).seconds.do(monitor_block)
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
