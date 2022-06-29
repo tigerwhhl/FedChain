@@ -2,20 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"encoding/pem"
-    "crypto/x509"
 	"strconv"
 	"fmt"
-    "bytes"
-	//"sync/atomic"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
-
-    "gopkg.in/mgo.v2"
-    "gopkg.in/mgo.v2/bson"
-
-	"os"
-    "io"
-	"path/filepath"
+	"time"
 )
 
 // SmartContract provides functions for managing a car
@@ -23,284 +13,120 @@ type SmartContract struct {
 	contractapi.Contract
 }
 
-type OrgInfo struct {
-	CurModelId string `json:"curModelId"`
-	CurWeight float32 `json:"curWeight"`
-	//Org string `json:"org"`
-	//Cert string `json:"cert"`
-	//Signature
-}
-
+// model detail information
+// k: curHashId v:ModelBlock
 type ModelBlock struct {
-	ModelType string `json:"modelType"`
-	PrevModelId string`json:"prevModelId"`
-	Weight float32 `json:"weight"`
-	Org string `json:"org"`
-	//WeightHash uint32 `json:"weightHash"`
-	//Timestamp int64 `json:"timestamp"`
-	//VerifyCode uint32 `json:verifyCode""`
+	ModelType string `json:"modelType"` 
+	PrevHashId string `json:"prevHashId"` 
+	ModelUrl string `json:"modelUrl"`
+	Timestamp string `json:"timestamp"`
+	Organization string `json:"organization"`
 }
 
-type GlobalModel struct {
-	CurGlobalModelId string `json:"curGlobalModelId"`
-    Round uint32 `json:"round"`
-	LocalModelIds []string `json:"localModelIds"`
+// global model meta information 
+// k: 'global' v: GlobalMetaInfo
+type GlobalModelMetaInfo struct {
+	CurHashId string `json:"curHashId"`
+	Round uint32 `json:"round"`
 	UploadCount uint32 `json:"uploadCount"`
-	TriggerNum uint32 `json:"triggerNum"`
+	TriggerAvgNum uint32 `json:"triggerAvgNum"`
+
+	LocalModelUrls []string `json:"localModelUrls"`
+	LocalModelBlocks []string `json:"localModelBlocks"`
 }
 
-//-------------------------------------------
-
-type AggregateInfo struct {
-	GlobalModel *GlobalModel `json:"globalModel"`
-	ModelBlocks []ModelBlock `json:"modelBlocks"`
+// meta infomation of local model in each organization 
+// k: 'orgX' v: LocalModelMetaInfo
+type LocalModelMetaInfo struct{
+	CurHashId string `json:"curHashId"`
+	//Cert string `json:"cert"`
+	//Signature string `json:"signature"`
 }
 
-var session *mgo.Session
-
-type Test struct {
-	Name string `bson:"name"`
-}
-
-
-// InitLedger adds a base set of cars to the ledger
 func (s *SmartContract) InitLedger(ctx contractapi.TransactionContextInterface) error {
+	var globalModelMetaInfo GlobalModelMetaInfo = GlobalModelMetaInfo{CurHashId:"0", Round:0, UploadCount:0, TriggerAvgNum:3, LocalModelUrls:[]string{}, LocalModelBlocks:[]string{}}
+	globalModelMetaInfoBytes, err := json.Marshal(globalModelMetaInfo)
+	err = ctx.GetStub().PutState("global",globalModelMetaInfoBytes)
 
-	var globalModel GlobalModel = GlobalModel{CurGlobalModelId:"" ,Round:0, LocalModelIds:[]string{}, UploadCount:0, TriggerNum:3}
-	globalModelBytes, _ := json.Marshal(globalModel)
-	err := ctx.GetStub().PutState("global",globalModelBytes)
+	timeStr := time.Now().Format("2022-06-29 15:49:05")
+	var modelBlock ModelBlock = ModelBlock{ModelType:"global", PrevHashId:"", ModelUrl:"/models/server/model.pth", Timestamp:timeStr, Organization:"Public"}
+	modelBlockBytes, err := json.Marshal(modelBlock)
+	err = ctx.GetStub().PutState("0", modelBlockBytes)
 
-	if err != nil {
-		return fmt.Errorf("Failed to put to world state. %s", err.Error())
+	for i := 1; i <= 10; i++{
+		var localModelMetaInfo LocalModelMetaInfo = LocalModelMetaInfo{CurHashId:""}
+		localModelMetaInfoBytes, _ := json.Marshal(localModelMetaInfo)
+		err = ctx.GetStub().PutState("org"+strconv.Itoa(i), localModelMetaInfoBytes)
 	}
-
-	for i := 1; i <= 10; i++ {
-		var orgInfo OrgInfo = OrgInfo{CurModelId:"-", CurWeight:1.0}
-		orgInfoByte, _ := json.Marshal(orgInfo)
-		err = ctx.GetStub().PutState("org"+strconv.Itoa(i), orgInfoByte)
-	}
-
-	se, _ := mgo.Dial("114.212.82.53:27017")
-	session = se
-	return nil
+	return err
 }
 
-func Connect(db, collection string) (*mgo.Session, *mgo.Collection) {
-	ms := session.Copy()
-	c := ms.DB(db).C(collection)
-	ms.SetMode(mgo.Monotonic, true)
-	return ms, c
+//#########################################Read##################
+
+
+func (s *SmartContract) GetGlobalModelMetaInfo(ctx contractapi.TransactionContextInterface) (*GlobalModelMetaInfo,error) {
+	globalModelMetaInfoBytes, err := ctx.GetStub().GetState("global")
+
+	var globalModelMetaInfo GlobalModelMetaInfo
+	_ = json.Unmarshal(globalModelMetaInfoBytes, &globalModelMetaInfo)
+	return &globalModelMetaInfo,err
 }
 
-func Insert(db, collection string, doc interface{}) error {
-	ms, c := Connect(db, collection)
-	defer ms.Close()
+func (s *SmartContract) GetLocalModelMetaInfo(ctx contractapi.TransactionContextInterface,org string) (*LocalModelMetaInfo,error) {
+	localModelMetaInfoBytes, err := ctx.GetStub().GetState(org)
 
-	return c.Insert(doc)
+	var localModelMetaInfo LocalModelMetaInfo
+	_ = json.Unmarshal(localModelMetaInfoBytes, &localModelMetaInfo)
+	return &localModelMetaInfo,err
 }
 
-func FindOne(db, collection string, query, result interface{}) error {
-	ms, c := Connect(db, collection)
-	defer ms.Close()
-
-	return c.Find(query).One(result)
-}
-
-func LoadFile(filename string) error{
-	ms := session.Copy()
-	defer ms.Close()
-	db := ms.DB("Federated")
-	file, err := db.GridFS("file").Open(filename)
-	if err != nil {
-        return err
-    }
-    defer file.Close()
-
-	out, err := os.OpenFile("./1.txt", os.O_CREATE, 0666)
-	if err != nil {
-		return err
-	}
-    _,err = io.Copy(out, file)
-
-	return nil
-}
-
-
-func (s *SmartContract) TestMongo(ctx contractapi.TransactionContextInterface) ([]string,error){
-	// session, err := mgo.Dial("114.212.82.53:27017")
-    // if err != nil {
-    //     panic(err)
-    // }
-	// s.session = session
-	// defer s.session.Close()
-
-    // s.session.SetMode(mgo.Monotonic, true)
-    // db := s.session.DB("Federated")
-	// c := db.C("Test")
-
-
-	// test := Test{}
-	// c.Find(bson.M{"name": "abcd"}).One(&test)
-	// return &test,nil
-	os.Mkdir("./benben",0777)
-	os.Mkdir("/benben",0777)
-    test := &Test{ Name:"whh" } 
-	Insert("Federated","Test", test)
-
-	var result Test
-	FindOne("Federated","Test", bson.M{"name": "abcd"}, &result)
-
-	LoadFile("1.txt")
-
-	str, _ := os.Getwd()
-	filepathNames, _ := filepath.Glob(filepath.Join(str, "*"))
-	return filepathNames, nil 
-}
- 
-func (s *SmartContract) GetOrg(ctx contractapi.TransactionContextInterface) (string,error){
-
-    creatorByte,_ := ctx.GetStub().GetCreator()
-    certStart := bytes.IndexAny(creatorByte,"-----BEGIN")
-    if(certStart==-1){
-        return "",fmt.Errorf("No Cert Found")
-    }
-    certText := creatorByte[certStart:]
-    bl,_ := pem.Decode(certText)
-    if (bl==nil){
-        return "",fmt.Errorf("Decode PEM Failed")
-    }
-    cert,err := x509.ParseCertificate(bl.Bytes)
-    if (err!=nil){
-        return "",fmt.Errorf("Parse Cert Failed")
-    }
-    uname := cert.Subject.CommonName
-    //return "",fmt.Errorf(uname)
-    return uname,nil
-
-}
-
-func (s *SmartContract) GetOrgInfo(ctx contractapi.TransactionContextInterface,org string) (*OrgInfo,error) {
-	orgInfoBytes, err := ctx.GetStub().GetState(org)
-	if err != nil {
-		return nil, fmt.Errorf("%s",err.Error())
-    }
-
-    var  orgInfo OrgInfo
-    _ = json.Unmarshal(orgInfoBytes, &orgInfo)
-    return &orgInfo,err
-}
-
-func (s *SmartContract) GetGlobalModel(ctx contractapi.TransactionContextInterface) (*GlobalModel,error) {
-   globalModelBytes, err := ctx.GetStub().GetState("global")
-   if err != nil {
-		return nil, fmt.Errorf("%s",err.Error())
-   }
-
-   var globalModel GlobalModel
-   _ = json.Unmarshal(globalModelBytes, &globalModel)
-   return &globalModel,err
-}
-
-func (s *SmartContract) GetModelBlock(ctx contractapi.TransactionContextInterface, curModelId string) (*ModelBlock,error) {
-	modelBlockBytes, err := ctx.GetStub().GetState(curModelId);
-	if err != nil {
-		return nil, fmt.Errorf("%s",err.Error())
-	}
+func (s *SmartContract) GetModelBlock(ctx contractapi.TransactionContextInterface,curHashId string) (*ModelBlock,error) {
+	modelBlockBytes, err := ctx.GetStub().GetState(curHashId)
 
 	var modelBlock ModelBlock
 	_ = json.Unmarshal(modelBlockBytes, &modelBlock)
 	return &modelBlock,err
 }
 
-func (s *SmartContract) DownloadGlobalModelInfo(ctx contractapi.TransactionContextInterface) (*AggregateInfo, error){
-	var info AggregateInfo
-	
-	globalModel, err := s.GetGlobalModel(ctx)
-	info.GlobalModel = globalModel
+//#########################################Write##################
 
-	blocks := []ModelBlock{}
-	for i := 0; i < len(globalModel.LocalModelIds); i++ {
-		
-		modelBlock, _ := s.GetModelBlock(ctx, globalModel.LocalModelIds[i])
-		//fmt.Printf(modelBlock.ModelType)
-		blocks = append(blocks, *modelBlock)
-	}   
-	info.ModelBlocks = blocks
+func (s *SmartContract) UpdateLocalModel(ctx contractapi.TransactionContextInterface, org string, curHashId string, modelUrl string, timestamp string) error{
+	localModelMetaInfo, err := s.GetLocalModelMetaInfo(ctx, org)
 
-    return &info, err
-}
+	var modelBlock ModelBlock = ModelBlock{ModelType:"local", PrevHashId:localModelMetaInfo.CurHashId, ModelUrl:modelUrl, Timestamp:timestamp, Organization:org}
+	modelBlockBytes, err := json.Marshal(modelBlock)
+	err = ctx.GetStub().PutState(curHashId, modelBlockBytes)
 
+	localModelMetaInfo.CurHashId = curHashId
+	localModelMetaInfoBytes, err := json.Marshal(localModelMetaInfo)
+	err = ctx.GetStub().PutState(org, localModelMetaInfoBytes)
 
-
-func (s *SmartContract) UpdateLocalModel(ctx contractapi.TransactionContextInterface, org string, curModelId string) error{
-	orgInfo, err := s.GetOrgInfo(ctx,org)
-	if err != nil {
-		return fmt.Errorf("%s",err.Error())
-	}
-
-	var modelBlock ModelBlock = ModelBlock{ModelType:"Local", PrevModelId:orgInfo.CurModelId, Weight:orgInfo.CurWeight, Org:org}
-	orgInfo.CurModelId = curModelId
-
-	modelBlockBytes, _ := json.Marshal(modelBlock)
-	err = ctx.GetStub().PutState(curModelId, modelBlockBytes)
-
-	orgInfoBytes, _ := json.Marshal(orgInfo)
-	err = ctx.GetStub().PutState(org,orgInfoBytes)
-
-	if err != nil {
-		return fmt.Errorf("Failed to put to world state. %s", err.Error())
-	}
-
-	//s.UpdateGlobalModel(ctx,curModelId)
-	globalModel, err :=s.GetGlobalModel(ctx);
-	globalModel.UploadCount +=1;
-	globalModel.LocalModelIds = append(globalModel.LocalModelIds, curModelId)
-
-	globalModelBytes, _ := json.Marshal(globalModel)
-	err = ctx.GetStub().PutState("global",globalModelBytes)
-
-	if err != nil {
-		return fmt.Errorf("%s",err.Error())
-    }
- 
-	if globalModel.UploadCount == globalModel.TriggerNum {
-		fmt.Printf("Begin Global Model Federated Aggregation")
-	}
-	return nil
-}
-
-func (s *SmartContract) FedAvg(ctx contractapi.TransactionContextInterface, weights string) error{
-	//something to do
-
-	weightsMap := make(map[string]float32)
-	err := json.Unmarshal([]byte(weights), &weightsMap)
-	
-	for k,v := range weightsMap{
-		orgInfo, _ := s.GetOrgInfo(ctx,k)
-		orgInfo.CurWeight = v
-		orgInfoBytes, _ := json.Marshal(orgInfo)
-		err = ctx.GetStub().PutState(k,orgInfoBytes)
-	}
-	// orgInfoBytes, _ := json.Marshal(orgInfo)
-	// err = ctx.GetStub().PutState("org1",orgInfoBytes)
+	globalModelMetaInfo, err := s.GetGlobalModelMetaInfo(ctx)
+	globalModelMetaInfo.UploadCount += 1
+	globalModelMetaInfo.LocalModelUrls = append(globalModelMetaInfo.LocalModelUrls, modelUrl)
+	globalModelMetaInfo.LocalModelBlocks = append(globalModelMetaInfo.LocalModelBlocks, curHashId)
+	globalModelMetaInfoBytes, err := json.Marshal(globalModelMetaInfo)
+	err = ctx.GetStub().PutState("global",globalModelMetaInfoBytes)
 	return err
-	// globalModel, err :=s.GetGlobalModel(ctx);
-	// globalModel.UploadCount +=1;
-	// globalModel.LocalModelIds = append(globalModel.LocalModelIds, localModelId)
-
-	// globalModelBytes, _ := json.Marshal(globalModel)
-	// err = ctx.GetStub().PutState("global",globalModelBytes)
-
-	// if err != nil {
-	// 	return fmt.Errorf("%s",err.Error())
-    // }
- 
-	// if globalModel.UploadCount == globalModel.TriggerNum {
-	// 	fmt.Printf("Begin Global Model Federated Aggregation")
-	// }
-	return nil
 }
 
+func (s *SmartContract) UpdateGlobalModel(ctx contractapi.TransactionContextInterface, curHashId string, modelUrl string, timestamp string) error{
+	globalModelMetaInfo, err := s.GetGlobalModelMetaInfo(ctx)
+
+	var modelBlock ModelBlock = ModelBlock{ModelType:"global", PrevHashId:globalModelMetaInfo.CurHashId, ModelUrl:modelUrl, Timestamp:timestamp, Organization:"Public"}
+	modelBlockBytes, err := json.Marshal(modelBlock)
+	err = ctx.GetStub().PutState(curHashId, modelBlockBytes)
+
+	globalModelMetaInfo.CurHashId = curHashId
+	globalModelMetaInfo.Round += 1
+	globalModelMetaInfo.UploadCount = 0
+	globalModelMetaInfo.LocalModelUrls = []string{}
+	globalModelMetaInfo.LocalModelBlocks = []string{}
+
+	globalModelMetaInfoBytes, err := json.Marshal(globalModelMetaInfo)
+	err = ctx.GetStub().PutState("global",globalModelMetaInfoBytes)
+	return err
+}
 
 func main() {
 
